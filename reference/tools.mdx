@@ -13,7 +13,7 @@ Connect from the dashboard's **MCP** page, which shows your org's URL and a snip
 |---|---|
 | `create_env` | Serve a pushed branch at a URL. Takes the branch, an optional name, and an optional `profile`. Calling it again with the same name updates the environment in place at the same URL. A source-only diff answers in under a second; a dependency or migration diff takes longer and returns a task your agent polls. |
 | `fork_env` | Snapshot a live environment into a new one with the same code and the same database state, diverging from that moment. For trying several approaches against identical data. |
-| `reset_db` | Restore the seeded database by re-forking the parent under the same name and URL. Never re-runs the seed; about a quarter of a second. |
+| `reset_db` | Restore the seeded database by re-forking the parent under the same name and URL. Never re-runs the seed; about 250 milliseconds. |
 | `kill_env` | Destroy an environment. The name survives, so a later `create_env` with it gets the same URL. |
 
 ## Inspect
@@ -29,7 +29,7 @@ Connect from the dashboard's **MCP** page, which shows your org's URL and a snip
 
 ## Long calls
 
-Fast calls answer inline. Work that takes longer than about 2.5 seconds, such as a parent rebuild or a test suite under `verify`, returns a task handle that your agent polls; you see the call take longer. An agent whose client does not support tasks gets cut off after 90 seconds with a message saying the work continues and to call again with the same arguments, which picks the work up rather than starting it twice.
+Fast calls answer inline. Work that takes longer than about 2.5 seconds, such as a parent rebuild or a test suite under `verify`, returns a task handle that your agent polls; you see the call take longer. If the agent's client does not support tasks, the call is cut off after 90 seconds with a message that the work continues. Calling again with the same arguments joins that work instead of starting it twice.
 
 ## Scripting a visual check
 

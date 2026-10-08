@@ -28,8 +28,8 @@ One block per process the app runs. Required: at least one service, and exactly 
 | `command` | string | Required. The command that starts the process. It runs from the app directory with the recipe's environment variables sourced. Do not add `--host 0.0.0.0`; the platform sets the common bind variables (`HOST`, `VITE_HOST`, and the like) for you. A dev server that reads none of them still needs its own `--host` flag. |
 | `port` | integer | The one port the process listens on. Exclusive with `ports`. Omit both for a process that listens on nothing, such as a worker. |
 | `ports` | list of integers | Several ports one process listens on, for example an API and a dev server started by one script. Exclusive with `port`. A port appears once across all services. |
-| `serve` | boolean | Marks a single-port service as the one the browser hits. Implied when exactly one service has exactly one port. |
-| `serve_port` | integer | For a multi-port service, which of its ports the browser hits. Implies `serve`. |
+| `serve` | boolean | Marks a single-port service as the one the browser connects to. Implied when exactly one service has exactly one port. |
+| `serve_port` | integer | For a multi-port service, which of its ports the browser connects to. Implies `serve`. |
 | `restart_on_inject` | boolean | Restart this process when secret values or the public URL arrive after a fork. Default false. Most dev servers do not need it. |
 
 A change to any key here is a **units** change: the unit is rewritten and the service restarts; on the default branch the parent rebuilds.
@@ -113,7 +113,7 @@ Every environment starts from the state the seed leaves. `reset_db` returns to i
 
 ## [ready]
 
-How the platform knows the app is up. Each key is a probe kind; the platform decides when to run each (polled during boot, re-run at the quality gate before a parent is accepted, and on `verify`). Readiness defaults to a 200 from the browser's port, so a repo can leave the block out.
+How the platform determines that the app is up. Each key is a probe kind; the platform chooses when to run each (polled during boot, re-run at the quality gate before a parent is accepted, and on `verify`). Readiness defaults to a 200 from the browser's port, so a repo can leave the block out.
 
 | Key | Form | Description |
 |---|---|---|
@@ -132,7 +132,7 @@ A change here is a **values** change.
 
 ## [warm]
 
-Routes to request once before an environment is declared ready, so the first visitor does not pay the dev server's first compile.
+Routes to request once before an environment is declared ready, so the first visitor does not wait for the dev server's first compile.
 
 | Key | Type | Default |
 |---|---|---|
@@ -148,7 +148,7 @@ Each rung carries exactly one verb:
 
 | Verb | Takes | What it means |
 |---|---|---|
-| `watch` | globs | Writing the file is the whole change. The dev servers notice. No command. |
+| `watch` | globs | Writing the file is the whole change. The dev servers reload. No command. |
 | `run` | a command, with `files` | Run the command in the fork after the files are written, with the app's services stopped, then start them again. For migrations, code generation, and builds that no watcher covers. |
 | `rebuild` | a command, with `files` | The change invalidates the image. The platform builds a parent for the branch first, then forks it. For dependency installs. |
 
@@ -229,7 +229,7 @@ A named variant of the app that an environment can be created as, without a seco
 | Key | Type | Description |
 |---|---|---|
 | `run` | string | Required. The command that turns a fresh fork into the variant. Runs after the fork's catch-up with the app's services still running. |
-| `serve_port` | integer | Required. The port the browser hits in this variant. Must be a port some `[[app.service]]` declares; a profile never adds a process. |
+| `serve_port` | integer | Required. The port the browser connects to in this variant. Must be a port some `[[app.service]]` declares; a profile never adds a process. |
 | `memory` | string | Raise the environment's memory while the command runs, up to `max_memory`. |
 | `env` | table | Extra variables for the command. |
 | `network` | boolean | Outbound access for the command's duration. |

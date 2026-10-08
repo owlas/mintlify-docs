@@ -15,7 +15,7 @@ This page takes you from nothing to an environment for a pull request, then conn
 
 <Steps>
   <Step title="Sign in to the dashboard">
-    Open [dashboard.rainbowmachine.ai](https://dashboard.rainbowmachine.ai) and sign in with GitHub. If your org is not set up yet, the dashboard walks you through installing the Rainbow Machine GitHub App on it. The App needs access to the repos you want to serve.
+    Open [dashboard.rainbowmachine.ai](https://dashboard.rainbowmachine.ai) and sign in with GitHub. If your org is not set up yet, the dashboard guides you through installing the Rainbow Machine GitHub App on it. The App needs access to the repos you want to serve.
   </Step>
   <Step title="Add the repo">
     On **Repos**, click **Add a repo** and pick it. If the repo already has a `rainbow.toml` on its default branch, Rainbow Machine starts building right away.
@@ -26,9 +26,9 @@ This page takes you from nothing to an environment for a pull request, then conn
     The repo's row on **Repos** shows the build. The first build compiles the base image, which takes minutes. Later builds reuse it and take seconds to a couple of minutes depending on what changed. When the row reads ready, the default branch has a warm parent and pull requests start getting environments.
   </Step>
   <Step title="Open a pull request">
-    Open any PR in the repo. Within a few seconds a comment from the Rainbow Machine bot appears with the environment's link, and the `rainbow-machine/preview` status on the commit goes green when the environment is ready. Push again and the same environment updates in place at the same URL.
+    Open any PR in the repo. Within a few seconds a comment from the Rainbow Machine bot appears with the environment's link, and the `rainbow-machine/preview` status on the commit reports success when the environment is ready. Push again and the same environment updates in place at the same URL.
 
-    If the build fails, the status goes red and the comment says which step failed and why.
+    If the build fails, the status reports failure and the comment says which step failed and why.
   </Step>
 </Steps>
 
@@ -40,9 +40,9 @@ The dashboard's **MCP** page for your org shows the MCP URL and a ready-made sni
 claude mcp add --transport http rainbow <your org's MCP URL>
 ```
 
-Then run `/mcp` inside Claude Code, pick **rainbow**, and choose **Authenticate**. A browser opens on rainbowmachine.ai; sign in with GitHub and approve. Tokens last seven days and refresh automatically for sixty, so you rarely see that screen again.
+Then run `/mcp` inside Claude Code, pick **rainbow**, and choose **Authenticate**. A browser opens on rainbowmachine.ai; sign in with GitHub and approve. Tokens last 7 days and refresh automatically for 60 days, so you rarely see that screen again.
 
-Once connected, ask in plain language. "Spin up an environment for my branch" calls `create_env`. "Try that fix in a fork" calls `fork_env`. The full tool list is in [Tools](/reference/tools).
+After you connect, ask in plain language. "Start an environment for my branch" calls `create_env`. "Try that fix in a fork" calls `fork_env`. The full tool list is in [Tools](/reference/tools).
 
 ## The loop
 
@@ -52,7 +52,7 @@ No pull request is required at any step:
 2. Ask your agent for an environment for it, or open **Environments** on the dashboard. The URL comes back in the tool result.
 3. Open the URL. The environment runs the dev stack, so changes made inside it hot-reload.
 4. Push again and ask again with the same name. The environment updates in place at the same URL.
-5. Made a mess of the data? `reset_db` gives back the seeded database at the same URL in under a second.
+5. To discard changed data, call `reset_db`. It restores the seeded database at the same URL in under a second.
 
 ## Next steps
 

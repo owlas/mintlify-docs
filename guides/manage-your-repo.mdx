@@ -7,15 +7,15 @@ This page is for the person who owns a repo on Rainbow Machine. It covers how `r
 
 ## The recipe is a file in your repo
 
-Everything Rainbow Machine knows about your app comes from `rainbow.toml` at the repo root. You edit it like any other file, review it in pull requests, and merge it. There is no settings page that overrides it. The full schema is in the [rainbow.toml reference](/reference/rainbow-toml).
+Everything Rainbow Machine reads about your app comes from `rainbow.toml` at the repo root. You edit it like any other file, review it in pull requests, and merge it. There is no settings page that overrides it. The full schema is in the [rainbow.toml reference](/reference/rainbow-toml).
 
 The platform reads the file **from the commit it builds**, never from a checkout's working tree:
 
-- **On the default branch**, every push resolves the recipe at that commit and compares it with the one the repo is served with. Any difference triggers a rebuild of the parent under the new recipe. Once the new parent is ready, new environments use the new recipe; existing ones keep theirs until they are re-forked.
+- **On the default branch**, every push resolves the recipe at that commit and compares it with the one the repo is served with. Any difference triggers a rebuild of the parent under the new recipe. After the new parent is ready, new environments use the new recipe. Existing environments keep theirs until they are re-forked.
 - **On a branch or PR**, `rainbow.toml` is a file like any other in the diff. If your branch changes it, your branch's environment runs under your branch's recipe. That is how you try a recipe change before merging it: push it, open the environment, and check. A branch that does not touch the file runs under the default branch's recipe.
 - **A file that does not parse** fails the build and says why. On the default branch the previous recipe keeps serving. On a branch, `create_env` and the PR status fail naming the commit and the error.
 
-Every error names the field in your words, for example:
+Every error names the field as it appears in the file, for example:
 
 ```
 app.service "dev" serves on several ports [8080 3000] — name the browser's with serve_port
