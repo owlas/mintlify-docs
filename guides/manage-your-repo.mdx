@@ -1,0 +1,102 @@
+---
+title: "Manage your repo"
+description: "Where the recipe lives, how changes land, secrets, outbound access, and what each change costs"
+---
+
+This page is for the person who owns a repo on Rainbow Machine. It covers how `rainbow.toml` is read, what happens when you change it, how to give environments secret values and outbound access, and what the dashboard shows you.
+
+## The recipe is a file in your repo
+
+Everything Rainbow Machine knows about your app comes from `rainbow.toml` at the repo root. You edit it like any other file, review it in pull requests, and merge it. There is no settings page that overrides it. The full schema is in the [rainbow.toml reference](/reference/rainbow-toml).
+
+The platform reads the file **from the commit it builds**, never from a checkout's working tree:
+
+- **On the default branch**, every push resolves the recipe at that commit and compares it with the one the repo is served with. Any difference triggers a rebuild of the parent under the new recipe. Once the new parent is ready, new environments use the new recipe; existing ones keep theirs until they are re-forked.
+- **On a branch or PR**, `rainbow.toml` is a file like any other in the diff. If your branch changes it, your branch's environment runs under your branch's recipe. That is how you try a recipe change before merging it: push it, open the environment, and check. A branch that does not touch the file runs under the default branch's recipe.
+- **A file that does not parse** fails the build and says why. On the default branch the previous recipe keeps serving. On a branch, `create_env` and the PR status fail naming the commit and the error.
+
+Every error names the field in your words, for example:
+
+```
+app.service "dev" serves on several ports [8080 3000] — name the browser's with serve_port
+```
+
+## What a recipe change costs
+
+Which block you change decides what has to happen before an environment reflects it. The dashboard's build view and the PR comment both say which class a change fell into.
+
+| You change | Class | What happens |
+|---|---|---|
+| `[ready]`, `[warm]`, `[origin]`, `[access]`, `[egress]`, `[[tier]]`, `[secrets]` names, `[profile.*]`, `[resources] memory` | **values** | Nothing runs. The new values apply to the environment and to new forks immediately. |
+| `[[app.service]]` (a command, a port, the browser's port, `restart_on_inject`), `[env]` | **units** | The service definitions and environment file are rewritten in the guest and the affected services restart. On the default branch, the parent rebuilds with the new units. Seconds. |
+| `[runtime]`, `[datastores]`, `[seed]`, `[resources] cpu`, a raise of `max_memory` | **image** | The base image is recompiled from that commit and a parent cold-booted from it. Minutes. On a branch, the branch gets its own image and parent, reused per commit. |
+
+Two things do not trigger a rebuild on their own:
+
+- **A runtime pin** such as `.nvmrc` or `go.mod`. Pins are read whenever the recipe is resolved, so a pin-only change is noticed at the next recipe change. If you need it sooner, touch `rainbow.toml`.
+- **A change to seed data** on a branch that does not change `[seed]`. The seed runs when the image is compiled. A new seed script is an image change; new rows in a seed fixture are not, unless the seed command's inputs are declared under a rung.
+
+## Secrets
+
+A secret is a value your app needs that must not be in git: an API key, a licence, a signing secret. You declare the **name** in `rainbow.toml` and set the **value** once on the dashboard. Every environment of the repo has the real value from the moment it boots, parent included.
+
+```toml
+[secrets]
+LIGHTDASH_SECRET  = "app-secret"
+PGPASSWORD        = "postgres-password"
+ANTHROPIC_API_KEY = "api-key"
+```
+
+The right-hand side is a kind, free text that documents what the name is. Two kinds mean something to the platform: `postgres-password` matches the password of the provisioned Postgres, and `app-secret` (or `secret-key-base`) gets a long generated value when nothing is stored. Any other declared name with no stored value is **absent** from the environment, not set to a placeholder. A feature keyed on that variable stays off until you store a value.
+
+To set a value, open the dashboard's **Secrets** page, pick the repo, and click **Add secret**. Name, value, and whether the value is an environment variable or a file. Only org owners can set or remove secrets; any member can see which names exist. Setting a value triggers a rebuild of the parent within about 30 seconds, so the new value is baked in rather than injected later.
+
+Know what you are storing. Secrets live on the machine that runs the repo's environments, and anyone who can run `exec` in one of them can read them. Development credentials belong here; production ones do not.
+
+## Outbound access
+
+Environments have no outbound network by default. A connection to any host outside the environment is refused immediately, so a misconfigured call fails fast instead of hanging.
+
+A repo that needs to reach something declares each flow:
+
+```toml
+[[egress.allow]]
+host = "api.keygen.sh"
+port = 443
+
+[[egress.allow]]
+host = "api.anthropic.com"
+port = 443
+```
+
+The list follows DNS, so a host that rotates addresses keeps working. Dependency installs are exempt: a rung from a preset such as `pnpm` gets network for its duration without a rule, because an install you did not write should reach its registry.
+
+When something is refused, the environment records it. The `egress` tool (and `verify`'s result) lists every host and port the environment tried to reach that no rule admits, with the DNS name, how many attempts, and when, plus the `[[egress.allow]]` rules that would admit them, ready to paste. Check it before adding a rule: a surprising entry is often a telemetry client you would rather disable in the app than admit.
+
+## Who can open environments
+
+By default an environment's URL is private to members of your GitHub org. For an open-source repo whose contributors are outside the org, set:
+
+```toml
+[access]
+public = true
+```
+
+The URL then needs no sign-in or token, and the PR comment says so. This is a values change: a branch that adds the block gets a public environment for itself.
+
+## The dashboard
+
+The dashboard at [dashboard.rainbowmachine.ai](https://dashboard.rainbowmachine.ai) has four pages for a repo owner:
+
+- **Repos** lists the org's repos with the host each runs on, the state of the latest build, and the served recipe. From here you add a repo, review or edit the recipe (edits open a pull request), and remove a repo. Removing a repo destroys its environments and parent.
+- **Environments** lists every environment with state, branch, commit, URL, and visitor count, with actions to open, reset, or kill it.
+- **Secrets** sets and removes values per repo, as above.
+- **MCP** shows the org's MCP URL and snippets for Claude Code, Cursor, and VS Code.
+
+## Checklist for a new recipe change
+
+1. Make the change on a branch and push.
+2. Open the branch's environment. If it is a PR, use the bot comment's link; otherwise ask your agent for `create_env` on the branch.
+3. Run `verify`. It runs the recipe's own readiness checks and reports any refused outbound connections.
+4. If the change adds a service or env variable, run `exec` to confirm the process is up and the variable is set.
+5. Merge. Watch the repo's row on **Repos** until the parent is ready.

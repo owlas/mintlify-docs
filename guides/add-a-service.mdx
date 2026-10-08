@@ -1,0 +1,72 @@
+---
+title: "Add a service"
+description: "A worked example: a headless browser the backend can dial, from a branch to merged"
+---
+
+This page walks through adding a process to the environment. The example is a headless browser, which a backend uses to render screenshots for scheduled deliveries and image exports. The same steps apply to a queue worker, a websocket server, or any process your app expects to find on localhost.
+
+## What you are declaring
+
+A service is a process the platform supervises: it gets a unit, a log you can read with `logs`, a restart on failure, and its ports made reachable. You declare it with an `[[app.service]]` block. Anything your app reads to find it goes in `[env]`.
+
+Ask three questions before you write it:
+
+1. **What command starts it, from the repo root?** The command runs from the app directory with the recipe's environment variables, as the same user as every other service.
+2. **Which port does it listen on?** A port appears once across all services. If the process listens on nothing, omit the port.
+3. **How does the app find it?** Usually one or two environment variables naming a host and a port. The host is `localhost`.
+
+## Example: a headless browser
+
+Suppose the backend reads `HEADLESS_BROWSER_HOST` and `HEADLESS_BROWSER_PORT`, connects to `ws://host:port` with Playwright, and drives the browser at `INTERNAL_LIGHTDASH_HOST` to take screenshots. Environments already ship Chromium, so the service is a Playwright server using the repo's own Playwright package:
+
+```toml
+[[app.service]]
+name    = "dev"
+command = "pnpm dev"
+ports   = [8080, 3000]
+serve_port = 3000
+
+[[app.service]]
+name    = "headless-browser"
+command = "pnpm -F backend exec playwright run-server --port 3001"
+port    = 3001
+
+[env]
+HEADLESS_BROWSER_HOST   = "localhost"
+HEADLESS_BROWSER_PORT   = "3001"
+INTERNAL_LIGHTDASH_HOST = "http://localhost:8080"
+```
+
+Three details matter here:
+
+- **The browser dials the app over localhost.** `INTERNAL_LIGHTDASH_HOST` points at the backend's own port, not the public URL. The environment has no outbound network by default, so a request to its own public hostname would be refused.
+- **The client and the server must agree on a version.** Playwright's `connect` refuses a server of a different version. Starting the server through the repo's own dependency keeps them aligned.
+- **No egress rule is needed.** Everything stays inside the environment.
+
+## Try it on a branch first
+
+A branch that changes `rainbow.toml` runs under its own recipe, so you can check the change before anyone else sees it:
+
+1. Push the branch and open its environment: the PR's bot comment, or `create_env` from your agent.
+2. Confirm the process is up and the variables are set:
+
+   ```bash
+   systemctl status rainbow-headless-browser
+   printenv HEADLESS_BROWSER_HOST HEADLESS_BROWSER_PORT
+   ```
+
+   Run these with the `exec` tool. Service units are named `rainbow-<service>`.
+3. Read its log with `logs` if it is not up. A command that exits immediately restarts on a short loop, and the log says why.
+4. Exercise the feature. For a screenshot service, trigger an export in the app and check the app's own health or logs for the connection.
+5. Run `verify`. If the service reached for something outside the environment, the result lists it with the egress rule that would admit it.
+
+## Merge
+
+Adding a service is a **units** change: on merge the parent rebuilds with the new unit, in seconds, and every environment forked from then on has it. Environments that already exist keep running without it until their next push re-forks them.
+
+## Variations
+
+- **A process with no port**, such as a worker or a file watcher, declares `name` and `command` only. It still gets a unit and a log.
+- **A process that must restart when secrets or the public URL arrive** sets `restart_on_inject = true`. Most dev servers read their environment at start and do not need it.
+- **A process that needs a datastore** finds it on localhost at the standard port: see [Datastores](/reference/rainbow-toml#datastores). Declare the datastore and the service's unit is ordered after it.
+- **A process that only one kind of environment needs**, such as a production bundle for an end-to-end suite, is not a service. It is a [profile](/reference/rainbow-toml#profile-name): a command that turns a fresh fork into the variant.

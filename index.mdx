@@ -1,20 +1,43 @@
 ---
 title: "Introduction"
-description: "Welcome to your project"
+description: "What Rainbow Machine is and how you work with it"
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+Rainbow Machine turns a git branch into a running, URL-addressable environment of your app in about a second. An environment is your repo's own dev stack: its services, its datastores, seeded data, and hot reload, behind a shareable URL. Every pull request gets one automatically. You can also ask for one for any pushed branch, from the dashboard or from a coding agent.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+These docs are for engineers whose repo runs on Rainbow Machine: how to find your environment, how to change what it contains, and what every line of `rainbow.toml` means.
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## How it works
+
+Your repo carries one file, `rainbow.toml`, that describes the app: the processes to run, the datastores it needs, how to tell it is ready, and which files trigger which rebuild. Rainbow Machine compiles that description into a base image, boots it once, and keeps a warm **parent** environment of your default branch. Every environment you see is a **fork** of that parent: a snapshot copy that starts with your branch's changes applied.
+
+Three things follow from that:
+
+- **A fork is fast.** A source-only change forks the parent in a few hundred milliseconds. A dependency or migration change takes longer, because the fork has to catch up first.
+- **Every environment starts from the same seeded state.** You can reset one to that state in under a second, and you can fork a live environment mid-task to try several things against identical data.
+- **The file describes the app, never the machine.** There are no kernel paths, IP addresses, or hostnames in `rainbow.toml`. Your app lives at `localhost`, and the platform maps it to a URL.
+
+## Where you work
+
+You meet Rainbow Machine in three places:
+
+| Surface | What it is for |
+|---|---|
+| **Pull request comments** | Every PR gets a comment with its environment's link, and a `rainbow-machine/preview` status that goes green when the environment is ready. |
+| **The dashboard** at [dashboard.rainbowmachine.ai](https://dashboard.rainbowmachine.ai) | Add and remove repos, watch builds, review and edit the recipe, set secrets, see every environment your org has and who visited it. |
+| **Your coding agent** | Claude Code, Cursor, and VS Code connect over MCP and get tools to create, fork, inspect, and verify environments. See [Tools](/reference/tools). |
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the GitHub App, add a repo, and open your first environment.
+  </Card>
+  <Card title="Your environment" icon="cube" href="/guides/your-environment">
+    What is in it, where it is, what state it is in, and how it changes when you push.
+  </Card>
+  <Card title="Manage your repo" icon="gear" href="/guides/manage-your-repo">
+    Change the recipe, set secrets, open outbound access, and understand what each change costs.
+  </Card>
+  <Card title="rainbow.toml reference" icon="file-code" href="/reference/rainbow-toml">
+    Every block and every key, with what it does and when you need it.
+  </Card>
+</CardGroup>

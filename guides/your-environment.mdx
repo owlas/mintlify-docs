@@ -1,0 +1,94 @@
+---
+title: "Your environment"
+description: "What is in it, where it is, what state it is in, and how it changes when you push"
+---
+
+This page answers "what is my dev environment right now?" It covers where to find an environment, what it contains, its lifecycle, and the ways it changes.
+
+## Where to find it
+
+Every environment has a name and a URL of the form `https://<name>.<org>.rainbowmachine.dev`. Names start with the repo so two repos never collide:
+
+| Kind | Name | How it appears |
+|---|---|---|
+| Pull request | `<repo>--pr-<number>` (for example `lightdash--pr-123`) | Automatically when the PR opens. The bot comment on the PR carries the link. |
+| Branch | `<repo>--<branch-label>`, or exactly the name you pass | When you or your agent ask for one with `create_env`. |
+| Fork | A name you pass, or an unnamed throwaway | When you or your agent call `fork_env` on a live environment. |
+| Profile variant | `<name>-<profile>` (for example `lightdash--pr-123-e2e`) | When you create an environment as one of the recipe's named profiles. |
+
+Three places list them:
+
+- **The dashboard's Environments page** shows every environment in your org with its state, branch, commit, URL, and how many people have opened it.
+- **The pull request** carries the link in the bot comment and the `rainbow-machine/preview` status on the head commit.
+- **Your agent's `list_envs` tool** returns id, name, state, branch, commit, URL, and the commit of the `rainbow.toml` the environment runs under.
+
+## What is in it
+
+An environment is a complete copy of the repo's dev stack as `rainbow.toml` describes it:
+
+- **Every declared service**, supervised and logging. The browser's service is the one the URL reaches.
+- **Every declared datastore** on localhost with fixed dev credentials: Postgres, Redis, an S3-compatible store (minio), and a mail catcher (mailpit). See [Datastores](/reference/rainbow-toml#datastores).
+- **Seeded data.** The recipe's seed ran once when the base image was compiled. Every environment starts from that state.
+- **Hot reload.** The environment runs the dev commands, so an edit inside it reloads the way it does on a laptop.
+- **Playwright and Chromium**, so an agent can script a visual check without a separate browser service.
+- **Secrets**, as real values for every declared name that has one stored, from the moment the environment boots.
+- **No outbound network** unless the recipe opens some. A call to an unlisted host fails at once with a connection refused, and the environment records what it tried to reach.
+
+The environment does not contain your laptop's state: no local `.env`, no uncommitted files. It is built from the pushed commit.
+
+## Where it came from
+
+Every environment is a fork of a **parent**: the warm, ready environment of your default branch that Rainbow Machine keeps for the repo. A fork copies the parent's memory and disk, then applies your branch's diff.
+
+What the diff touches decides how long that takes:
+
+| Your branch changes | What the fork does | Typical cost |
+|---|---|---|
+| Source files only | Writes them; the dev servers notice | A few hundred milliseconds |
+| A file a `run` rung watches (migrations, generated code) | Runs that rung's command in the fork with the app stopped, then starts it again | Seconds to a few minutes |
+| A lockfile or another `rebuild` rung | Builds a parent for your branch first, then forks it | Minutes, once per commit |
+| `rainbow.toml` itself | Runs under your branch's recipe; see [What a recipe change costs](/guides/manage-your-repo#what-a-recipe-change-costs) | Depends on the block |
+
+Each environment records which `rainbow.toml` it runs under. Tool results and the PR comment say whether that is the branch's own file or the default branch's.
+
+## States
+
+An environment is in one of four states, and the dashboard and `list_envs` show which:
+
+| State | What it means | What wakes it |
+|---|---|---|
+| **running** | The VM is up and serving. | Nothing to do. |
+| **paused** | The VM is frozen in memory. | Any request to its URL, in a few milliseconds. |
+| **hibernated** | The VM's memory is on disk and the VM is gone. The URL still works. | Any request to its URL, in about half a second to a second. A brief splash page shows while it wakes. |
+| **killed** | The disk is freed. The name survives, so a later `create_env` with it gets the same URL. | A new `create_env` or the next push to the PR. |
+
+The idle clock drives the ladder. By default an environment hibernates after 20 minutes without a request and is killed after 18 hours. Both horizons are a setting on the host that serves your org, so yours can differ. Unnamed forks get a shorter clock, 20 minutes to a kill, because nothing points at them.
+
+Opening the link always works. You never clean up by hand; `kill_env` frees resources sooner when you want them back.
+
+## How it changes
+
+**A push updates it in place.** The environment keeps its name and URL. The platform diffs the new commit against the parent, applies the changes, and runs whatever rungs the diff busts, with the app stopped during a `run` rung and started again after, even if the rung fails. Visitors see a short interruption, not a new URL.
+
+**A push to the default branch moves the parent.** Most pushes coast: the parent stays where it is and new forks catch up on their own. A push that changes dependencies, the recipe, or a rung marked `eager` rebuilds the parent. During a rebuild existing environments keep working.
+
+**`reset_db` restores the seeded state** by re-forking the parent under the same name and URL. It never re-runs the seed, so it takes a few hundred milliseconds. Files you wrote inside the environment go with the data.
+
+**`fork_env` branches a live environment.** The fork has the same code and the same database state as its source at that moment and diverges from there. An agent can try three fixes in three forks and keep the one that verifies.
+
+## Looking inside
+
+Three tools read or act inside an environment:
+
+- `logs` returns the service logs.
+- `exec` runs a shell command inside the environment, from the app's directory with the app's environment variables.
+- `verify` runs the recipe's readiness and first-paint checks and, optionally, a command of your own, such as a test suite. The result is structured per check and includes any outbound connection the egress policy refused.
+
+The guest has `playwright` on its path and Chromium installed, so a verification script can render a page. Abort requests to hosts other than `localhost` before navigating; otherwise a blocked font or analytics request makes the page wait on a load that never completes.
+
+## Who can open it
+
+Access to the URL depends on one line in the recipe:
+
+- With `[access] public = true`, anyone with the URL can open it. There is no sign-in and no token. Your app's own login, if it has one, still applies.
+- Otherwise the URL asks for a GitHub sign-in once, and only members of your org get in. Tool results and private-repo PR comments carry a tokened link (`?rbtoken=...`) that skips the sign-in; share those only in private channels, because the token is the credential.

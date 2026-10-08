@@ -1,0 +1,40 @@
+---
+title: "Tools"
+description: "What a connected coding agent can do with environments"
+---
+
+A coding agent connected over MCP gets the tools below. You call them by asking in plain language; the names are what shows up in the transcript. Every org member gets the full set over the org's environments. There is no read-only tier, because environments are disposable and rebuilt from git.
+
+Connect from the dashboard's **MCP** page, which shows your org's URL and a snippet for Claude Code, Cursor, and VS Code.
+
+## Create and change
+
+| Tool | What it does |
+|---|---|
+| `create_env` | Serve a pushed branch at a URL. Takes the branch, an optional name, and an optional `profile`. Calling it again with the same name updates the environment in place at the same URL. A source-only diff answers in under a second; a dependency or migration diff takes longer and returns a task your agent polls. |
+| `fork_env` | Snapshot a live environment into a new one with the same code and the same database state, diverging from that moment. For trying several approaches against identical data. |
+| `reset_db` | Restore the seeded database by re-forking the parent under the same name and URL. Never re-runs the seed; about a quarter of a second. |
+| `kill_env` | Destroy an environment. The name survives, so a later `create_env` with it gets the same URL. |
+
+## Inspect
+
+| Tool | What it does |
+|---|---|
+| `list_envs` | Every environment in your org: id, name, state, branch, commit, URL, profile, and the commit of the `rainbow.toml` it runs under. |
+| `url` | A link to the environment. For a private repo this is a tokened link that signs the opener in; share it only in private channels. |
+| `logs` | The environment's service logs. |
+| `exec` | Run a shell command inside the environment, from the app directory with the app's environment variables. |
+| `verify` | Run the recipe's readiness and first-paint checks, plus an optional command of your own such as a test suite. Returns a result per check, and lists any outbound connection the egress policy refused. |
+| `egress` | The environment's outbound policy and every host and port it tried to reach that no rule admits, with the DNS name, attempt count, and time, plus the `[[egress.allow]]` rules that would admit them. |
+
+## Long calls
+
+Fast calls answer inline. Work that takes longer than about 2.5 seconds, such as a parent rebuild or a test suite under `verify`, returns a task handle that your agent polls; you see the call take longer. An agent whose client does not support tasks gets cut off after 90 seconds with a message saying the work continues and to call again with the same arguments, which picks the work up rather than starting it twice.
+
+## Scripting a visual check
+
+Environments ship Playwright and Chromium, so a script run through `exec` or `verify` can render a page. Three rules keep such a script honest:
+
+- **Abort requests to other hosts** before navigating. Outbound traffic is refused, and a page waiting on a blocked font or analytics script never finishes loading. Wait for your app's root element rather than the browser's load event.
+- **Use CommonJS** with `NODE_PATH=/usr/local/lib/node_modules`, because the global Playwright package is not reachable from an ES module.
+- **Wait for `attached`, not visible**, because an app root's first child can be a style element.

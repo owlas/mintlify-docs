@@ -1,47 +1,60 @@
 ---
 title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+description: "From an empty org to a working environment"
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+This page takes you from nothing to an environment for a pull request, then connects a coding agent so you can drive environments from any branch. It covers the one-time setup for an org and the per-repo setup.
 
 ## Prerequisites
 
-Before you begin, you must have:
+- You are a member of a GitHub org that uses Rainbow Machine. Access follows org membership: there is no separate account or API key.
+- To add a repo or set secrets, you are an **owner** of that org. Day-to-day work needs no owner role.
+- The repo has a dev stack that runs on Linux and a way to seed its data. Most web apps qualify.
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+## Set up a repo
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
-
-    ```bash
-    npm install your-package
-    ```
+  <Step title="Sign in to the dashboard">
+    Open [dashboard.rainbowmachine.ai](https://dashboard.rainbowmachine.ai) and sign in with GitHub. If your org is not set up yet, the dashboard walks you through installing the Rainbow Machine GitHub App on it. The App needs access to the repos you want to serve.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+  <Step title="Add the repo">
+    On **Repos**, click **Add a repo** and pick it. If the repo already has a `rainbow.toml` on its default branch, Rainbow Machine starts building right away.
 
-    ```bash
-    your-cli init
-    ```
+    If it does not, the dashboard offers to generate one. That runs a discovery agent against the repo and opens a pull request with a draft recipe. Nothing changes until you merge that PR. Review it the way you would review any contributor's PR: the draft is a starting point, and you own the file from then on.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+  <Step title="Watch the first build">
+    The repo's row on **Repos** shows the build. The first build compiles the base image, which takes minutes. Later builds reuse it and take seconds to a couple of minutes depending on what changed. When the row reads ready, the default branch has a warm parent and pull requests start getting environments.
+  </Step>
+  <Step title="Open a pull request">
+    Open any PR in the repo. Within a few seconds a comment from the Rainbow Machine bot appears with the environment's link, and the `rainbow-machine/preview` status on the commit goes green when the environment is ready. Push again and the same environment updates in place at the same URL.
 
-    ```bash
-    your-cli start
-    ```
+    If the build fails, the status goes red and the comment says which step failed and why.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Connect your coding agent
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+The dashboard's **MCP** page for your org shows the MCP URL and a ready-made snippet for Claude Code, Cursor, and VS Code. For Claude Code the snippet is:
+
+```bash
+claude mcp add --transport http rainbow <your org's MCP URL>
+```
+
+Then run `/mcp` inside Claude Code, pick **rainbow**, and choose **Authenticate**. A browser opens on rainbowmachine.ai; sign in with GitHub and approve. Tokens last seven days and refresh automatically for sixty, so you rarely see that screen again.
+
+Once connected, ask in plain language. "Spin up an environment for my branch" calls `create_env`. "Try that fix in a fork" calls `fork_env`. The full tool list is in [Tools](/reference/tools).
+
+## The loop
+
+No pull request is required at any step:
+
+1. Push your branch to origin.
+2. Ask your agent for an environment for it, or open **Environments** on the dashboard. The URL comes back in the tool result.
+3. Open the URL. The environment runs the dev stack, so changes made inside it hot-reload.
+4. Push again and ask again with the same name. The environment updates in place at the same URL.
+5. Made a mess of the data? `reset_db` gives back the seeded database at the same URL in under a second.
+
+## Next steps
+
+- [Your environment](/guides/your-environment): what is in it, how to find it, what the states mean.
+- [Manage your repo](/guides/manage-your-repo): secrets, outbound access, and what a recipe change costs.

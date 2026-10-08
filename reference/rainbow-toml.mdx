@@ -1,0 +1,326 @@
+---
+title: "rainbow.toml"
+description: "Every block and key, what it does, and when you need it"
+---
+
+`rainbow.toml` sits at the root of your repo and describes the app: what runs, what it needs, how to tell it is ready, and which files trigger which rebuild. This page lists every block and key. The platform rejects an unknown key with its name, so a typo never silently does nothing.
+
+One rule decides what belongs in the file: **a value that changes when the app's code changes belongs here; a value that changes when the machine changes does not.** There are no hostnames, IP addresses, kernel paths, or credentials in the file. Your app lives at `localhost`.
+
+A minimal file is one service with a port:
+
+```toml
+[[app.service]]
+name    = "web"
+command = "pnpm dev"
+port    = 3000
+```
+
+Everything else is optional. Blocks appear below in the order they matter when you read a file top to bottom.
+
+## [[app.service]]
+
+One block per process the app runs. Required: at least one service, and exactly one of them must be the browser's entry point.
+
+| Key | Type | Description |
+|---|---|---|
+| `name` | string | Required. A short identifier. The unit is `rainbow-<name>`, and `logs` and `[[tier]] restart` refer to it by this name. Unique across services. |
+| `command` | string | Required. The command that starts the process. It runs from the app directory with the recipe's environment variables sourced. Do not add `--host 0.0.0.0`; the platform sets the common bind variables (`HOST`, `VITE_HOST`, and the like) for you. A dev server that reads none of them still needs its own `--host` flag. |
+| `port` | integer | The one port the process listens on. Exclusive with `ports`. Omit both for a process that listens on nothing, such as a worker. |
+| `ports` | list of integers | Several ports one process listens on, for example an API and a dev server started by one script. Exclusive with `port`. A port appears once across all services. |
+| `serve` | boolean | Marks a single-port service as the one the browser hits. Implied when exactly one service has exactly one port. |
+| `serve_port` | integer | For a multi-port service, which of its ports the browser hits. Implies `serve`. |
+| `restart_on_inject` | boolean | Restart this process when secret values or the public URL arrive after a fork. Default false. Most dev servers do not need it. |
+
+A change to any key here is a **units** change: the unit is rewritten and the service restarts; on the default branch the parent rebuilds.
+
+## [resources]
+
+How big an environment is. All keys are optional.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `cpu` | integer | platform default | Virtual CPUs per environment. An **image** change. |
+| `memory` | string, for example `"8gb"` | `"4gb"` | The environment's steady memory. A starting guess; the platform measures the real working set and corrects an over-guess. |
+| `max_memory` | string | same as `memory` | The ceiling a `[[tier]]` or `[profile]` may raise the environment to while its command runs. Must not be below `memory`. Raising it is an **image** change; lowering it is not. |
+
+## [runtime]
+
+What the image needs installed. Every key is optional, and the language pins are inferred from the files your ecosystem already uses, so most repos leave this block out or use it only for OS packages.
+
+| Key | Type | Description |
+|---|---|---|
+| `node` | string | Node version. Inferred from `.nvmrc`, `.node-version`, `.tool-versions`, or `package.json` `engines.node`, in that order. |
+| `package_manager` | string | `pnpm`, `npm`, `yarn`, `bun`, or `bundler`. Inferred from `package.json` `packageManager`, then the lockfile present. |
+| `ruby` | string | Inferred from `.ruby-version`, `.tool-versions`, or the Gemfile's `ruby` line. |
+| `python` | string | Inferred from `.python-version` or `.tool-versions`. |
+| `go` | string | Inferred from `go.mod`'s `toolchain` line, then its `go` directive. |
+| `system` | list of strings | Extra OS packages (Debian names) with no platform meaning, such as `libvips42`. A declared datastore installs its own package; listing it here is redundant. |
+| `build` | list of strings | Commands that run once while the image is compiled, after dependency installs and before any `run` rung. Use it for a custom toolchain or an artifact a rung needs, such as a Python virtualenv or a one-off library build. |
+
+A pin is a prefix: `24` takes the newest 24.x, `24.18` the newest 24.18.y. An explicit key always wins over inference. If no pin exists anywhere for a language the repo clearly uses, the build fails naming the file to add. Any change here is an **image** change.
+
+## [datastores]
+
+Which datastores to provision inside the environment. Each is a boolean. The platform installs it, starts it for the seed, and orders every service after it. Your app reaches it on localhost at the standard port with fixed dev credentials, and you tell the app those values in `[env]`.
+
+| Key | What the app gets |
+|---|---|
+| `postgres` | PostgreSQL 16 on `localhost:5432`, user `postgres`, password `password`. One database is created per `postgres://...` URL among the `[env]` values. |
+| `redis` | Redis on `localhost:6379`. |
+| `minio` | An S3-compatible store at `http://localhost:9000`, access key `minioadmin`, secret `minioadmin`, path-style addressing. One bucket is created per `[env]` variable whose name ends in `BUCKET`. |
+| `mailpit` | An SMTP sink on `localhost:1025` that accepts any sender, with or without credentials. Captured mail is readable inside the environment on port 8025. |
+
+Any change here is an **image** change.
+
+## [env]
+
+Environment variables every service, rung, and seed sees. Values are strings. This is where the app's own names for the datastores go, along with dev-only settings that are neither secret nor the public URL.
+
+```toml
+[env]
+NODE_ENV = "development"
+PGHOST   = "localhost"
+PGPORT   = "5432"
+S3_ENDPOINT = "http://localhost:9000"
+```
+
+Names must be valid environment variable names. A change here is a **units** change: the environment file is rewritten and every service restarts.
+
+## [secrets]
+
+Names of values the app needs that are not in git. The right-hand side is a kind, free text that documents the name. Values are set on the dashboard's **Secrets** page, never in the file.
+
+```toml
+[secrets]
+LIGHTDASH_SECRET  = "app-secret"
+PGPASSWORD        = "postgres-password"
+ANTHROPIC_API_KEY = "api-key"
+```
+
+Two kinds have meaning: `postgres-password` resolves to the provisioned database's password, and `app-secret` or `secret-key-base` gets a long generated value when nothing is stored. Any other name with no stored value is absent from the environment. A stored value reaches every environment of the repo from boot, parent included; storing one rebuilds the parent. Adding or removing a name is a **values** change.
+
+## [seed]
+
+How to load data once, while the image is compiled, after the rung ladder's build commands have run (so a migration rung has already built the schema).
+
+| Key | Type | Description |
+|---|---|---|
+| `run` | string | The seed command. Several commands joined with `&&` are fine. |
+| `env` | table | Extra variables for the seed only, such as a dummy licence that lets the seed run without enabling anything. |
+
+Every environment starts from the state the seed leaves. `reset_db` returns to it without re-running the seed. A change here is an **image** change.
+
+## [ready]
+
+How the platform knows the app is up. Each key is a probe kind; the platform decides when to run each (polled during boot, re-run at the quality gate before a parent is accepted, and on `verify`). Readiness defaults to a 200 from the browser's port, so a repo can leave the block out.
+
+| Key | Form | Description |
+|---|---|---|
+| `http` | a URL, or `[[ready.http]]` tables with `url` | Ready when the URL answers 200. May target any declared port. |
+| `paints` | `{ url, within, selector }`, or `[[ready.paints]]` tables | Ready when a headless browser loads the URL and the CSS selector appears within the duration (`"10s"`). Records first-paint time on every build. |
+| `file` | a path, or `[[ready.file]]` tables with `path` | Ready when the file exists, for example a build manifest. |
+| `run` | a command, a list of commands, or `[[ready.run]]` tables with `run` | Ready when the command exits 0. Runs inside the environment. The escape hatch for anything the other kinds cannot express. |
+
+```toml
+[ready]
+http   = "http://localhost:8080/api/v1/health"
+paints = { url = "http://localhost:3000/login", within = "10s", selector = "#root > *" }
+```
+
+A change here is a **values** change.
+
+## [warm]
+
+Routes to request once before an environment is declared ready, so the first visitor does not pay the dev server's first compile.
+
+| Key | Type | Default |
+|---|---|---|
+| `routes` | list of paths | `["/"]` on the browser's port |
+
+A **values** change.
+
+## [[tier]]
+
+The cache ladder: an ordered list of rungs, each claiming a set of files and saying what to do when one of them changes. The platform diffs a branch against the parent, and the first rung whose globs match a changed file claims it. Deepest rungs go first; the bottom rung must be the catch-all `watch = ["**"]`.
+
+Each rung carries exactly one verb:
+
+| Verb | Takes | What it means |
+|---|---|---|
+| `watch` | globs | Writing the file is the whole change. The dev servers notice. No command. |
+| `run` | a command, with `files` | Run the command in the fork after the files are written, with the app's services stopped, then start them again. For migrations, code generation, and builds that no watcher covers. |
+| `rebuild` | a command, with `files` | The change invalidates the image. The platform builds a parent for the branch first, then forks it. For dependency installs. |
+
+Other keys on a rung:
+
+| Key | Type | Description |
+|---|---|---|
+| `name` | string | Required unless `preset` supplies it. Appears in build output and tool results. |
+| `preset` | string | Ecosystem shorthand that fills the globs, verb, and command: `pnpm`, `npm`, `yarn`, `go`, `cargo`, `bundler`, `poetry`, `pip`. Explicit keys win over the preset. |
+| `files` | list of globs | Which changed files this `run` or `rebuild` rung claims. |
+| `env` | table | Extra variables for this rung's command. |
+| `eager` | boolean | On the default branch, rebuild the shared parent as soon as this rung fires instead of letting each new environment catch up on its own. Default false. |
+| `run_in_fork` | string | A different command to use inside a live fork than at image-build time. Rare. |
+| `network` | boolean | Give the command outbound access while it runs: the `[egress]` list when there is one, otherwise everything. Default false, except on a preset rung, whose install gets its registry. |
+| `memory` | string | Raise the environment's memory while the command runs, up to `[resources] max_memory`. |
+| `restart` | list of service names, or `["all"]` | Services to restart after the command. |
+
+```toml
+[[tier]]
+preset = "pnpm"
+
+[[tier]]
+name  = "migrate"
+files = ["packages/backend/src/database/migrations/**"]
+run   = "pnpm -F backend migrate"
+memory = "12gb"
+
+[[tier]]
+name  = "app"
+watch = ["**"]
+```
+
+`network`, `memory`, and `restart` scope a command, so they are not valid on a `watch` rung. A change here is a **values** change.
+
+## [origin]
+
+How the app learns its public URL. Each environment has a different hostname, and nothing re-executes on fork, so the platform tells the app two ways: an environment variable, and a correction applied to responses in flight.
+
+| Key | Type | Description |
+|---|---|---|
+| `vars` | list of names | Environment variables that carry the environment's public origin, such as `SITE_URL`. |
+| `patch` | list of tables | Responses the ingress corrects on the way out. Each has `path` (must start with `/`) and exactly one of `field`, a dot path into a JSON body, or `replace`, a literal substring. Optional `content_type` and `max_bytes` limit which responses are inspected. |
+
+```toml
+[origin]
+vars  = ["SITE_URL"]
+patch = [{ path = "/api/v1/health", field = "results.siteUrl" }]
+```
+
+A **values** change.
+
+## [egress]
+
+Outbound access. Environments have none by default, and a connection to an unlisted host is refused immediately.
+
+```toml
+[[egress.allow]]
+host = "api.anthropic.com"
+port = 443
+```
+
+Each rule needs `host` and a positive `port`. The list follows DNS, so hosts that rotate addresses keep working. What the policy refused is recorded per environment and reported by the `egress` tool with the rules that would admit it. A **values** change: a branch that edits the block gets the new list on its own environment.
+
+## [access]
+
+Who can open an environment's URL.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `public` | boolean | false | With `true`, anyone with the URL can open it: no sign-in, no token. With `false`, the URL asks for a GitHub sign-in and admits members of your org, or a tokened link. The app's own login is unaffected either way. |
+
+A **values** change.
+
+## [profile.name]
+
+A named variant of the app that an environment can be created as, without a second parent. The canonical case is an end-to-end profile: the production bundle built in a fresh fork and served by the backend, so a test suite runs against production assets while the ordinary environment stays a dev server.
+
+| Key | Type | Description |
+|---|---|---|
+| `run` | string | Required. The command that turns a fresh fork into the variant. Runs after the fork's catch-up with the app's services still running. |
+| `serve_port` | integer | Required. The port the browser hits in this variant. Must be a port some `[[app.service]]` declares; a profile never adds a process. |
+| `memory` | string | Raise the environment's memory while the command runs, up to `max_memory`. |
+| `env` | table | Extra variables for the command. |
+| `network` | boolean | Outbound access for the command's duration. |
+
+```toml
+[profile.e2e]
+run        = "pnpm -F frontend build"
+serve_port = 8080
+memory     = "12gb"
+```
+
+Create one with `create_env` and `profile = "e2e"`. The default name is `<name>-<profile>`, so a branch's preview and its variant coexist. Names are lowercase letters, digits, and dashes, up to 32 characters. A **values** change.
+
+## A complete example
+
+The file below is a working recipe for a pnpm monorepo with a backend on 8080, a Vite frontend on 3000, Postgres, S3, and mail, all started by one `pnpm dev`.
+
+```toml
+[[app.service]]
+name       = "dev"
+command    = "pnpm dev"
+ports      = [8080, 3000]
+serve_port = 3000
+
+[access]
+public = true
+
+[resources]
+cpu        = 8
+memory     = "8gb"
+max_memory = "16gb"
+
+[runtime]
+system = ["postgresql-16-pgvector"]
+
+[datastores]
+postgres = true
+minio    = true
+mailpit  = true
+
+[env]
+NODE_ENV    = "development"
+PGHOST      = "localhost"
+PGPORT      = "5432"
+PGUSER      = "postgres"
+PGDATABASE  = "postgres"
+S3_ENDPOINT = "http://localhost:9000"
+S3_BUCKET   = "default"
+S3_ACCESS_KEY = "minioadmin"
+S3_SECRET_KEY = "minioadmin"
+EMAIL_SMTP_HOST = "localhost"
+EMAIL_SMTP_PORT = "1025"
+
+[seed]
+run = "pnpm -F backend seed"
+
+[ready]
+http   = "http://localhost:8080/api/v1/health"
+paints = { url = "http://localhost:3000/login", within = "10s", selector = "#root > *" }
+
+[warm]
+routes = ["/", "/login"]
+
+[[tier]]
+preset = "pnpm"
+
+[[tier]]
+name  = "migrate"
+files = ["packages/backend/src/database/migrations/**"]
+run   = "pnpm -F backend migrate"
+memory = "12gb"
+
+[[tier]]
+name  = "app"
+watch = ["**"]
+
+[origin]
+vars  = ["SITE_URL"]
+patch = [{ path = "/api/v1/health", field = "results.siteUrl" }]
+
+[[egress.allow]]
+host = "api.anthropic.com"
+port = 443
+
+[secrets]
+APP_SECRET        = "app-secret"
+PGPASSWORD        = "postgres-password"
+ANTHROPIC_API_KEY = "api-key"
+
+[profile.e2e]
+run        = "pnpm -F frontend build"
+serve_port = 8080
+memory     = "12gb"
+```
